@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 # --- 1. 路径与数据加载 ---
 # 请确保文件名与您的本地文件一致
 file_dir = r"D:\Overseas\German Sport University Cologne\20.Course Materials\TSM11-Project&Applied Research Methods\23.Analysis\Stats"
-file_path = os.path.join(file_dir, 'all_subjects_summary_fake置零.csv')
+file_path = os.path.join(file_dir, 'all_subjects_summary_for_stats.csv')
 save_dir = os.path.join(file_dir, "Plots")
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
@@ -33,34 +33,82 @@ hue_order = subjects + ['Pooled']
 plot_palette = 'Set1' 
 
 # --- 3. 绘图函数 ---
+# --- 修改后的绘图函数 (更窄的宽高比 + 图例在下方) ---
 def save_boxplot(data, x, y, hue, order, hue_order, xlabel, ylabel, title, filename):
-    plt.figure(figsize=(10, 6))
-    sns.boxplot(
+    # 调整 figsize：将宽度从 11 减小到 7，高度设为 8
+    # 现在的宽高比约为 0.875 (原先为 1.57)
+    plt.figure(figsize=(7, 8)) 
+    
+    ax = sns.boxplot(
         data=data, x=x, y=y, hue=hue, 
         order=order, hue_order=hue_order, 
         palette=plot_palette,
-        showfliers=True, # 显示异常值
+        showfliers=True, 
         width=0.8
     )
     
-    plt.xlabel(xlabel, fontsize=14, labelpad=12, fontweight='bold')
-    plt.ylabel(ylabel, fontsize=14, labelpad=12, fontweight='bold')
+    # 设置坐标轴标签
+    plt.xlabel(xlabel.capitalize(), fontsize=14, labelpad=12, fontweight='bold')
+    plt.ylabel(ylabel.capitalize(), fontsize=14, labelpad=12, fontweight='bold')
+    
+    # 设置图片标题
     plt.title(title, fontsize=16, fontweight='bold', pad=20)
+    
+    # 设置坐标轴刻度
     plt.xticks(fontsize=12)
     plt.yticks(fontsize=12)
     
-    # 调整图例
-    plt.legend(title='Subject', title_fontsize=13, fontsize=11, 
-               bbox_to_anchor=(1.02, 1), loc='upper left', frameon=True)
+    # --- 修改图例位置：挪动到图片下方 ---
+    # loc='upper center' 指的是图例框的上边中心点
+    # bbox_to_anchor=(0.5, -0.18) 将该点定位在坐标系水平 50%，垂直下方一定距离处
+    # ncol=3 将图例分为 3 列显示，节省垂直空间
+    plt.legend(
+        title='Participant ID', 
+        title_fontsize=13, 
+        fontsize=11, 
+        bbox_to_anchor=(0.5, -0.18), 
+        loc='upper center',
+        ncol=3, 
+        frameon=True
+    )
     
-    # 自动调整布局防止标签重叠
+    # tight_layout 会自动调整子图参数，使之填充整个图像区域
+    # 对于有下方图例的情况，bbox_inches='tight' 在 savefig 时尤为重要
     plt.tight_layout()
     
     # 保存图片
     save_path = os.path.join(save_dir, filename)
     plt.savefig(save_path, dpi=400, bbox_inches='tight')
     plt.close()
-    print(f"已保存: {filename}")
+    print(f"已保存 (窄版): {filename}")
+# def save_boxplot(data, x, y, hue, order, hue_order, xlabel, ylabel, title, filename):
+#     plt.figure(figsize=(10, 6))
+#     sns.boxplot(
+#         data=data, x=x, y=y, hue=hue, 
+#         order=order, hue_order=hue_order, 
+#         palette=plot_palette,
+#         showfliers=True, # 显示异常值
+#         width=0.8
+#     )
+    
+#     plt.xlabel(xlabel, fontsize=14, labelpad=12, fontweight='bold')
+#     plt.ylabel(ylabel, fontsize=14, labelpad=12, fontweight='bold')
+#     plt.title(title, fontsize=16, fontweight='bold', pad=20)
+#     plt.xticks(fontsize=12)
+#     plt.yticks(fontsize=12)
+    
+#     # 调整图例
+#     plt.legend(title='Subject', title_fontsize=13, fontsize=11, 
+#                bbox_to_anchor=(1.02, 1), loc='upper left', frameon=True)
+    
+#     # 自动调整布局防止标签重叠
+#     plt.tight_layout()
+    
+#     # 保存图片
+#     save_path = os.path.join(save_dir, filename)
+#     plt.savefig(save_path, dpi=400, bbox_inches='tight')
+#     plt.close()
+#     print(f"已保存: {filename}")
 
 # --- 4. 执行绘图 ---
 
@@ -74,7 +122,7 @@ save_boxplot(
     order=speed_order, 
     hue_order=hue_order,
     xlabel='Block Speed', 
-    ylabel='Mean Speed before Anchor Step [m/s]',
+    ylabel='Mean Speed before Anchor Strike [m/s]',
     title='Baseline Speed in Different Speed Conditions',
     filename='Boxplot_Baseline_Speed.png'
 )

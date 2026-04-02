@@ -66,6 +66,8 @@ subjects = {
 }
 
 subject_extract_df_list = []
+export_summary = True
+
 for subject_id, subject_info in subjects.items():
     # if subject_id not in ('S03'):
     #     continue 
@@ -75,27 +77,10 @@ for subject_id, subject_info in subjects.items():
     # subject.read_static_data()
     problem_trials = subject_info['reprocess_trials']
     subject_extract_df = subject.analyze_subject(to_read='all', pause_analyze=problem_trials,
-                                                 overwrite=False, solve_ik=False, solve_id=False)
+                                                 overwrite=False, solve_ik=False, solve_id=False,
+                                                 inspect_moment=False)
     subject_extract_df_list.append(subject_extract_df)
 
-all_subjects_df = pd.concat(subject_extract_df_list, ignore_index=True)
-all_subjects_df.to_csv(os.path.join(STATS_DIR, 'all_subjects_summary.csv'), index=False)
-
-# for speed, trial_idx, intensity, c3d_data, c3d_metadata, c3d_file_path, pad_data, pad_file_path in subject.read_data():
-#     trial = Trial(mocap_data=c3d_data, mocap_metadata=c3d_metadata, mocap_file_path=c3d_file_path, 
-#                   pad_data=pad_data, pad_file_path=pad_file_path, 
-#                   speed=speed, trial_idx=trial_idx, subject=subject)
-#     try:
-#         trial.analyze_trial(overwrite=False)
-#     except Exception as e:
-#         log_dir = r"D:\Overseas\German Sport University Cologne\20.Course Materials\TSM11-Project&Applied Research Methods\23.Analysis"
-#         log_path = os.path.join(log_dir, 'trial_error.log')
-#         with open(log_path, 'a') as f:
-#             message = f"***Error while analyzing trial {trial_idx} at {speed} speed for subject {subject_id}***" \
-#                 f"\t\tError info: \n{e}\n" + "*" * 50
-#             print(message)
-#             f.write(message)
-#             f.close()
-    # velocity = trial.velocity
-    # velocity = np.vstack([velocity, np.sqrt(np.sum(np.square(velocity), axis=0))])  # Calculate the overall velocity
-    # event_times = c3d_metadata['events']['times'] - c3d_metadata['start_frame'] / c3d_metadata['marker_freq']
+if export_summary:
+    all_subjects_df = pd.concat(subject_extract_df_list, ignore_index=True)
+    all_subjects_df.to_csv(os.path.join(STATS_DIR, 'all_subjects_summary.csv'), index=False)

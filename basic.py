@@ -793,36 +793,32 @@ def quick_interpolate(orig_array, template_array, kind=None, time_axis=1):
     return interp_array
 
 
-def find_response_moment(moment_array, start_idx, end_idx, nth=1|2):
+def find_response_moment(moment_array, baseline_start_idx, anchor_step_idx, end_idx):
     """
-    Find the response moment by finding the two highest peaks, and return the latter one.
-    Note: The function finds maximum peaks. Therefore, the input should be taken negative
-    values if minimum peaks are to be found.
+    Find the response moment by finding the highest peak in the step following anchor step.
+    Note: The function finds maximum peak. Therefore, the input should be taken negative
+    values if minimum peak is to be found.
 
-    :param nth: Which maximum in time is desired. 
-    If `nth` == 2, the latter peak in the largest two peaks will be returned.
-    If `nth` == 1, the largest peak will be return.
+    :param baseline_start_idx: The frame index of the start of the stride preceding anchor step.
+    :param anchor_step_idx: The frame index of anchor step.
+    :param end_idx: The frame index of the end of the step following anchor step.
     :return: Tuple of (index, value).
     """
-    if nth > 2:
-        return None
-    
+    # Exclude 0.1 * baseline stride in the beginning to avoid capturing 
+    # small fluctuation (specifically for ankle)
+    start_idx = round(anchor_step_idx + 0.1 * (anchor_step_idx - baseline_start_idx))
     peaks = signal.find_peaks(moment_array[start_idx:end_idx+1])[0]
     peaks += start_idx
 
-    # Get the highest two peaks and indices
+    # Get the highest peak and index
     # Results are in descending order of values
-    top_with_idx = heapq.nlargest(nth, zip(peaks, moment_array[peaks]), key=lambda x: x[1])
+    top_with_idx = heapq.nlargest(1, zip(peaks, moment_array[peaks]), key=lambda x: x[1])
 
-    if nth == 1:
-        return top_with_idx[0]
-    # Return the second peak in time (that happens after the first peak)
-    elif len(top_with_idx) == 1:
-        return [math.nan, math.nan]
-    elif top_with_idx[0][0] > top_with_idx[1][0]:
+    # Return the peak
+    if top_with_idx:
         return top_with_idx[0]
     else:
-        return top_with_idx[1]
+        return (math.nan, math.nan)
     
 
 @contextmanager

@@ -2,8 +2,9 @@ import copy
 import dataclasses
 from dataclasses import dataclass
 import math
-import os
+import matplotlib.pyplot as plt
 import numpy as np
+import os
 import pandas as pd
 import opensim as osim
 import time
@@ -62,7 +63,7 @@ class Trial():
             self.model = self.subject.model[self.total_trial_idx]
 
     def analyze_trial(self, cutoff_marker=15, cutoff_fp=15, cutoff_pad=15, normalize_criterium=None, 
-                      overwrite=True, solve_ik=True, solve_id=True, pause_analyze=[]):
+                      overwrite=True, solve_ik=True, solve_id=True, pause_analyze=[], inspect_moment=False):
         """
         Interface method to initiate the analysis pipeline.
 
@@ -128,86 +129,7 @@ class Trial():
         elif os.path.exists(os.path.join(self.id_dir, os.path.basename(self.id_dir) + '_id_generalized_forces.sto')):
             self.id_results = os.path.join(self.id_dir, os.path.basename(self.id_dir) + '_id_generalized_forces.sto')
         
-        # Extract trial info
-        # Extract velocity
-        self.velocity, COM_trajectory = self.get_velocity(self.data_normalized['markers'])
-        for i, event in enumerate(idx_event_cropped['markers']):
-            if event[0] == 'Anchor Step':
-                idx_anchor_step = event[1]
-                # The mean speed 1 stride before anchor step
-                mean_speed_before_anchor_x = np.mean(self.velocity[0, idx_event_cropped['markers'][i-2][1]:idx_anchor_step])
-                mean_speed_before_anchor_y = np.mean(self.velocity[1, idx_event_cropped['markers'][i-2][1]:idx_anchor_step])
-                mean_speed_before_anchor_z = np.mean(self.velocity[2, idx_event_cropped['markers'][i-2][1]:idx_anchor_step])
-                mean_speed_before_anchor_total = np.mean(self.velocity[3, idx_event_cropped['markers'][i-2][1]:idx_anchor_step])
-                mean_y_before_anchor = np.mean(COM_trajectory[1, :])
-        # Extract push info
-        self.pad_force_total = get_vector_norm(self.data_normalized['pad']['force'])
-        push_pad_ind = extract_push_range(self.pad_force_total, self.freq_pad) \
-            if self.intensity != 'fake' else [math.nan, math.nan, math.nan]
-        push_marker_ind = get_nearest_index(push_pad_ind, self.freq_pad, self.freq_marker)
-        # Extract ID results
-        _, trial_id_results = read_mot_sto(self.id_results)
-        side_abbr = self.subject.dominant_hand[0].lower()
-        hip_add_moment = trial_id_results[f'hip_adduction_{side_abbr}_moment'].to_numpy(copy=True)
-        knee_add_moment = trial_id_results[f'knee_add_{side_abbr}_moment'].to_numpy(copy=True)
-        ankle_invers_moment = trial_id_results[f'subtalar_angle_{side_abbr}_moment'].to_numpy(copy=True)
-        hip_response_idx, hip_response_moment = find_response_moment(-hip_add_moment, idx_anchor_step, idx_event_cropped['markers'][-1][1], 2)
-        knee_response_idx, knee_response_moment = find_response_moment(-knee_add_moment, idx_anchor_step, idx_event_cropped['markers'][-1][1], 2)
-        ankle_response_idx, ankle_response_moment = find_response_moment(-ankle_invers_moment, idx_anchor_step, idx_event_cropped['markers'][-1][1], 1)
-        # Create output dict and dataframe
-        trial_extract_dict = {
-            "subject_id": self.subject.subject_id,
-            "subject_weight": self.subject.weight,
-            "subject_height": self.subject.height,
-            "total_trial_idx": self.total_trial_idx,
-            "speed": self.speed,
-            "trial_idx": self.trial_idx,
-            "intensity": self.intensity,
-            "anchor_step_time": (idx_anchor_step + 1) / self.freq_marker,
-            "mean_speed_before_anchor": mean_speed_before_anchor_total,
-            "push_start_time": (push_pad_ind[0] + 1) / self.freq_pad,
-            "push_peak_time": (push_pad_ind[1] + 1) / self.freq_pad,
-            "push_end_time": (push_pad_ind[2] + 1) / self.freq_pad,
-            "push_duration": (push_pad_ind[2] - push_pad_ind[0] + 1) / self.freq_pad,
-            "push_peak_force": self.pad_force_total[push_pad_ind[1]] if self.intensity != 'fake' else math.nan,
-            "push_impulse": get_vector_norm(integrate_interval(self.data_normalized['pad']['force'], push_pad_ind[0], push_pad_ind[2], self.freq_pad)),  # Impulse is a vector
-            "push_peak_force_norm": None,
-            "push_impulse_norm": None,
-            "delta_y_push": COM_trajectory[1, push_marker_ind[2]] - COM_trajectory[1, push_marker_ind[0]] if self.intensity != 'fake' else math.nan,
-            "delta_y_post_anchor": min(COM_trajectory[1, idx_anchor_step:idx_event_cropped['markers'][-1][1]]) - mean_y_before_anchor,
-            "delta_speed_push_x": self.velocity[0, push_marker_ind[2]] - self.velocity[0, push_marker_ind[0]] if self.intensity != 'fake' else math.nan,
-            "delta_speed_push_y": self.velocity[1, push_marker_ind[2]] - self.velocity[1, push_marker_ind[0]] if self.intensity != 'fake' else math.nan,
-            "delta_speed_push_z": self.velocity[2, push_marker_ind[2]] - self.velocity[2, push_marker_ind[0]] if self.intensity != 'fake' else math.nan,
-            # "delta_speed_push_total": self.velocity[3, push_marker_ind[2]] - self.velocity[3, push_marker_ind[0]] if self.intensity != 'fake' else math.nan,
-            "delta_speed_post_anchor_x": min(self.velocity[0, idx_anchor_step:idx_event_cropped['markers'][-1][1]]) - mean_speed_before_anchor_x if side_abbr == 'r'\
-                else max(self.velocity[0, idx_anchor_step:idx_event_cropped['markers'][-1][1]]) - mean_speed_before_anchor_x,
-            "delta_speed_post_anchor_y": min(self.velocity[1, idx_anchor_step:idx_event_cropped['markers'][-1][1]]) - mean_speed_before_anchor_y,
-            "delta_speed_post_anchor_z": max(self.velocity[2, idx_anchor_step:idx_event_cropped['markers'][-1][1]]) - mean_speed_before_anchor_z,
-            # "delta_speed_post_anchor_total": max(self.velocity[3, idx_anchor_step:idx_event_cropped['markers'][-1][1]]) - mean_speed_before_anchor_total,
-            "delta_hip_add_moment_push_norm": (hip_add_moment[push_marker_ind[2]] - hip_add_moment[push_marker_ind[0]]) / (self.subject.weight * self.subject.height)\
-                if self.intensity != 'fake' else math.nan,
-            "delta_knee_add_moment_push_norm": (knee_add_moment[push_marker_ind[2]] - knee_add_moment[push_marker_ind[0]]) / (self.subject.weight * self.subject.height)\
-                if self.intensity != 'fake' else math.nan,
-            "delta_ankle_invers_moment_push_norm": (ankle_invers_moment[push_marker_ind[2]] - ankle_invers_moment[push_marker_ind[0]]) / (self.subject.weight * self.subject.height)\
-                if self.intensity != 'fake' else math.nan,
-            "hip_response_moment_post_anchor_norm": hip_response_moment / (self.subject.weight * self.subject.height),
-            "knee_response_moment_post_anchor_norm": knee_response_moment / (self.subject.weight * self.subject.height),
-            "ankle_response_moment_post_anchor_norm": ankle_response_moment / (self.subject.weight * self.subject.height),
-            "hip_response_moment_time": (hip_response_idx + 1) / self.freq_marker,
-            "knee_response_moment_time": (knee_response_idx + 1) / self.freq_marker,
-            "ankle_response_moment_time": (ankle_response_idx + 1) / self.freq_marker 
-        }
-        # Normalize the force and impulse by body mass
-        trial_extract_dict['push_peak_force_norm'] = trial_extract_dict['push_peak_force'] / self.subject.weight,
-        trial_extract_dict['push_impulse_norm'] = trial_extract_dict['push_impulse'] / self.subject.weight
-        # Flip the data of left-handed subjects to be in the same walking direction as right-handed ones
-        if self.subject.dominant_hand.lower() == 'left':
-            trial_extract_dict['delta_speed_push_x'] = -trial_extract_dict['delta_speed_post_anchor_x']
-            trial_extract_dict['delta_speed_post_anchor_x'] = -trial_extract_dict['delta_speed_post_anchor_x']
-
-        trial_extract_df = pd.DataFrame(trial_extract_dict, index=[0])
-        
-        return trial_extract_df
+        return self.summarize_trial(idx_event_cropped, inspect_moment)
     
     def normalize_step_cycle(self, data, criterium: str = 'marker') -> dict | np.ndarray:
         """
@@ -463,13 +385,116 @@ class Trial():
 
         return output_motion_file_path
 
-    def summarize_trial(self):
+    def summarize_trial(self, idx_event_cropped, inspect_moment):
         """
         Summarize the analysis result of a single trial.
-        
-        :param self: Description
         """
-        pass
+        # Extract trial info
+        # Extract velocity
+        self.velocity, COM_trajectory = self.get_velocity(self.data_normalized['markers'])
+        for i, event in enumerate(idx_event_cropped['markers']):
+            if event[0] == 'Anchor Step':
+                idx_anchor_step = event[1]
+                # The mean speed 1 stride before anchor step
+                mean_speed_before_anchor_x = np.mean(self.velocity[0, idx_event_cropped['markers'][i-2][1]:idx_anchor_step])
+                mean_speed_before_anchor_y = np.mean(self.velocity[1, idx_event_cropped['markers'][i-2][1]:idx_anchor_step])
+                mean_speed_before_anchor_z = np.mean(self.velocity[2, idx_event_cropped['markers'][i-2][1]:idx_anchor_step])
+                mean_speed_before_anchor_total = np.mean(self.velocity[3, idx_event_cropped['markers'][i-2][1]:idx_anchor_step])
+                mean_y_before_anchor = np.mean(COM_trajectory[1, :])
+        # Extract push info
+        self.pad_force_total = get_vector_norm(self.data_normalized['pad']['force'])
+        push_pad_ind = extract_push_range(self.pad_force_total, self.freq_pad) \
+            if self.intensity != 'fake' else [math.nan, math.nan, math.nan]
+        push_marker_ind = get_nearest_index(push_pad_ind, self.freq_pad, self.freq_marker)
+        # Extract ID results
+        _, trial_id_results = read_mot_sto(self.id_results)
+        side_abbr = self.subject.dominant_hand[0].lower()
+        hip_add_moment = trial_id_results[f'hip_adduction_{side_abbr}_moment'].to_numpy(copy=True)
+        knee_add_moment = trial_id_results[f'knee_add_{side_abbr}_moment'].to_numpy(copy=True)
+        ankle_invers_moment = trial_id_results[f'subtalar_angle_{side_abbr}_moment'].to_numpy(copy=True)
+        hip_response_idx, hip_response_moment = find_response_moment(-hip_add_moment, idx_event_cropped['markers'][0][1], idx_anchor_step, idx_event_cropped['markers'][-1][1])
+        knee_response_idx, knee_response_moment = find_response_moment(-knee_add_moment, idx_event_cropped['markers'][0][1], idx_anchor_step, idx_event_cropped['markers'][-1][1])
+        ankle_response_idx, ankle_response_moment = find_response_moment(-ankle_invers_moment, idx_event_cropped['markers'][0][1], idx_anchor_step, idx_event_cropped['markers'][-1][1])
+        # Create output dict and dataframe
+        trial_extract_dict = {
+            "subject_id": self.subject.subject_id,
+            "subject_weight": self.subject.weight,
+            "subject_height": self.subject.height,
+            "total_trial_idx": self.total_trial_idx,
+            "speed": self.speed,
+            "trial_idx": self.trial_idx,
+            "intensity": self.intensity,
+            "anchor_step_time": (idx_anchor_step + 1) / self.freq_marker,
+            "mean_speed_before_anchor": mean_speed_before_anchor_total,
+            "push_start_time": (push_pad_ind[0] + 1) / self.freq_pad,
+            "push_peak_time": (push_pad_ind[1] + 1) / self.freq_pad,
+            "push_end_time": (push_pad_ind[2] + 1) / self.freq_pad,
+            "push_duration": (push_pad_ind[2] - push_pad_ind[0] + 1) / self.freq_pad,
+            "push_peak_force": self.pad_force_total[push_pad_ind[1]] if self.intensity != 'fake' else math.nan,
+            "push_impulse": get_vector_norm(integrate_interval(self.data_normalized['pad']['force'], push_pad_ind[0], push_pad_ind[2], self.freq_pad)),  # Impulse is a vector
+            "push_peak_force_norm": None,
+            "push_impulse_norm": None,
+            "delta_y_push": COM_trajectory[1, push_marker_ind[2]] - COM_trajectory[1, push_marker_ind[0]] if self.intensity != 'fake' else math.nan,
+            "delta_y_post_anchor": min(COM_trajectory[1, idx_anchor_step:idx_event_cropped['markers'][-1][1]]) - mean_y_before_anchor,
+            "delta_speed_push_x": self.velocity[0, push_marker_ind[2]] - self.velocity[0, push_marker_ind[0]] if self.intensity != 'fake' else math.nan,
+            "delta_speed_push_y": self.velocity[1, push_marker_ind[2]] - self.velocity[1, push_marker_ind[0]] if self.intensity != 'fake' else math.nan,
+            "delta_speed_push_z": self.velocity[2, push_marker_ind[2]] - self.velocity[2, push_marker_ind[0]] if self.intensity != 'fake' else math.nan,
+            # "delta_speed_push_total": self.velocity[3, push_marker_ind[2]] - self.velocity[3, push_marker_ind[0]] if self.intensity != 'fake' else math.nan,
+            "delta_speed_post_anchor_x": min(self.velocity[0, idx_anchor_step:idx_event_cropped['markers'][-1][1]]) - mean_speed_before_anchor_x if side_abbr == 'r'\
+                else max(self.velocity[0, idx_anchor_step:idx_event_cropped['markers'][-1][1]]) - mean_speed_before_anchor_x,
+            "delta_speed_post_anchor_y": min(self.velocity[1, idx_anchor_step:idx_event_cropped['markers'][-1][1]]) - mean_speed_before_anchor_y,
+            "delta_speed_post_anchor_z": max(self.velocity[2, idx_anchor_step:idx_event_cropped['markers'][-1][1]]) - mean_speed_before_anchor_z,
+            # "delta_speed_post_anchor_total": max(self.velocity[3, idx_anchor_step:idx_event_cropped['markers'][-1][1]]) - mean_speed_before_anchor_total,
+            "delta_hip_add_moment_push_norm": (hip_add_moment[push_marker_ind[2]] - hip_add_moment[push_marker_ind[0]]) / (self.subject.weight * self.subject.height)\
+                if self.intensity != 'fake' else math.nan,
+            "delta_knee_add_moment_push_norm": (knee_add_moment[push_marker_ind[2]] - knee_add_moment[push_marker_ind[0]]) / (self.subject.weight * self.subject.height)\
+                if self.intensity != 'fake' else math.nan,
+            "delta_ankle_invers_moment_push_norm": (ankle_invers_moment[push_marker_ind[2]] - ankle_invers_moment[push_marker_ind[0]]) / (self.subject.weight * self.subject.height)\
+                if self.intensity != 'fake' else math.nan,
+            "hip_response_moment_post_anchor_norm": hip_response_moment / (self.subject.weight * self.subject.height),
+            "knee_response_moment_post_anchor_norm": knee_response_moment / (self.subject.weight * self.subject.height),
+            "ankle_response_moment_post_anchor_norm": ankle_response_moment / (self.subject.weight * self.subject.height),
+            "hip_response_moment_time": (hip_response_idx + 1) / self.freq_marker,
+            "knee_response_moment_time": (knee_response_idx + 1) / self.freq_marker,
+            "ankle_response_moment_time": (ankle_response_idx + 1) / self.freq_marker 
+        }
+        # Normalize the force and impulse by body mass
+        trial_extract_dict['push_peak_force_norm'] = trial_extract_dict['push_peak_force'] / self.subject.weight,
+        trial_extract_dict['push_impulse_norm'] = trial_extract_dict['push_impulse'] / self.subject.weight
+        # Flip the data of left-handed subjects to be in the same walking direction as right-handed ones
+        if self.subject.dominant_hand.lower() == 'left':
+            trial_extract_dict['delta_speed_push_x'] *= -1
+            trial_extract_dict['delta_speed_post_anchor_x'] *= -1
+        
+        if inspect_moment:
+            fig, ax = plt.subplots(1, 3, figsize=(12, 7.5), sharex=True)
+            ax[0].plot(hip_add_moment)
+            ax[0].set_ylabel('Hip Adduction Moment [N*m]')
+            ax[0].vlines(hip_response_idx, min(hip_add_moment), max(hip_add_moment))
+            ax[0].vlines(idx_anchor_step, min(hip_add_moment), max(hip_add_moment), colors='black')
+            ax[0].vlines(push_marker_ind, min(hip_add_moment), max(hip_add_moment), linestyles='dashed')
+            ax[1].plot(knee_add_moment)
+            ax[1].set_ylabel('Knee Adduction Moment [N*m]')
+            ax[1].vlines(knee_response_idx, min(knee_add_moment), max(knee_add_moment))
+            ax[1].vlines(idx_anchor_step, min(knee_add_moment), max(knee_add_moment), colors='black')
+            ax[1].vlines(push_marker_ind, min(knee_add_moment), max(knee_add_moment), linestyles='dashed')
+            ax[2].plot(ankle_invers_moment)
+            ax[2].set_ylabel('Ankle Inversion Moment [N*m]')
+            ax[2].vlines(ankle_response_idx, min(ankle_invers_moment), max(ankle_invers_moment))
+            ax[2].vlines(idx_anchor_step, min(ankle_invers_moment), max(ankle_invers_moment), colors='black')
+            ax[2].vlines(push_marker_ind, min(ankle_invers_moment), max(ankle_invers_moment), linestyles='dashed')
+            plt.suptitle(f'Total Trial Idx: {self.total_trial_idx}\nSpeed: {self.speed}  Trial Idx: {self.trial_idx}  Intensity: {self.intensity}')
+            plots_dir = os.path.join(ANALYSIS_DIR, r"Stats\Plots\Response Moment")
+            if not os.path.exists(plots_dir):
+                os.makedirs(plots_dir)
+            fig.tight_layout(rect=[0, 0, 1, 0.95])
+            # plt.show()
+            fig.savefig(os.path.join(plots_dir, f'{self.subject.subject_id}_{self.speed.capitalize()}_Trial{self.trial_idx}.png'), dpi=200, bbox_inches='tight')
+            plt.close()
+
+        trial_extract_df = pd.DataFrame(trial_extract_dict, index=[0])
+        
+        return trial_extract_df
 
     def _crop_by_events(self, data, freq, start_step_offset=2, end_step_offset=1, axis=-1):
         """
