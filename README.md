@@ -1,5 +1,9 @@
 # Brief Intro to Each Script File
 
+* *.\MATLAB*
+  
+    MATLAB scripts for early-phase purposes. Not used in later stages of the project.
+
 * *basic.py*
 
     **Core module** including classes and functions used for data processing and computation. `VoltConverter` is used for converting raw voltage data of the pad to forces and moments, `spectral_subtraction_same_trial`, `spectral_subtraction`, `Mask` and `Filter` are used for signal processing. `transform_pad_to_global` and `get_pad_center` are relevant to transforming the pushing data to global coordinate system.
