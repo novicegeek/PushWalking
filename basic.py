@@ -1,7 +1,6 @@
 from contextlib import contextmanager
 import heapq
 import math
-import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pywt
@@ -115,20 +114,20 @@ class VoltConverter():
             return out_mechanics
 
 
-def spectral_subtraction_same_trial(data, fs, axis):
+def spectral_subtraction_same_trial(data: np.ndarray, fs, axis):
     """
     Subtract the baseline spectrum from the whole signal.
     """
     def _spectral_subtraction_same_trial_id(data_1d):
-        # 提取“指纹”段
-        # 避开了推力的爆发期，又抓到了纯步行的特征
+        # Extract the noise fingerprint from the first 0.1-0.6 second of the signal
+        # Which likely contains only the walking noise
         noise_fingerprint = data_1d[round(fs*0.1) : round(fs*0.6)]
         
-        # 如果前面不够长，就取推力结束后的段落补齐
+        # If the noise fingerprint is too short, use the last 0.6-0.1 second
         if len(noise_fingerprint) < fs * 0.3:
             noise_fingerprint = data_1d[len(data_1d)-round(fs*0.6) : len(data_1d)-round(fs*0.1)]
             
-        # 4. 调用之前的谱减法函数
+        # Call the spectral subtraction function
         cleaned_data = spectral_subtraction(data_1d, noise_fingerprint, fs=fs, axis=axis, alpha=2.0)
         
         return cleaned_data
@@ -139,57 +138,65 @@ def spectral_subtraction_same_trial(data, fs, axis):
         return np.apply_along_axis(_spectral_subtraction_same_trial_id, axis=axis, arr=data)
     
 
-def spectral_subtraction(noisy_signal, noise_only_signal, fs, axis, alpha=2.0, beta=0.01):
+def spectral_subtraction(noisy_signal: np.ndarray, noise_only_signal: np.ndarray, fs, axis, alpha=2.0, beta=0.01):
     """
-    使用谱减法去除背景步行干扰
+    Use spectral subtraction to reduce the background noise in the signal.
     
-    参数:
-    - noisy_signal: 包含推力+步行的信号 (1D array)
-    - noise_only_signal: 只有步行的参考信号 (1D array)
-    - fs: 采样率
-    - alpha: 减法过度因子 (Over-subtraction factor)。
-             >1 会更干净但也可能损伤信号；通常取 1.0~3.0
-    - beta: 谱下限 (Spectral floor)。
-            防止减得太狠出现“负数”导致波形破碎，给基线留一点点极微弱的底噪。
+    Parameters
+    ----------
+    noisy_signal: 
+        Contains both push and walking signals
+    noise_only_signal: 
+        The reference signal containing only walking noise
+    fs: 
+        Sampling rate
+    alpha: 
+        Over-subtraction factor. >1 may be cleaner but may also damage the signal. Typically 1.0~3.0.
+    beta: 
+        Spectral floor. Prevents over-subtraction from creating "negative" values that could distort 
+        the waveform, leaving a small amount of residual noise.
     """
     def _spectral_subtraction_1d(noisy_signal_1d, noise_only_signal_1d):
-        # 1. 计算 STFT (短时傅里叶变换)
-        # nperseg 建议选 1024 (约 200ms)，能覆盖步行的特征周期
+        # 1. Calculate STFT (Short-Time Fourier Transform) of both signals
+        # nperseg suggested to be 1024，covering about 200ms at 5kHz, which is a good balance 
+        # between time and frequency resolution for walking signals
         nperseg = 1024
         f, t, Zxx_noisy = signal.stft(noisy_signal_1d, fs=fs, nperseg=nperseg)
         _, _, Zxx_noise = signal.stft(noise_only_signal_1d, fs=fs, nperseg=nperseg)
         
-        # 2. 提取幅度和相位
+        # 2. Extract magnitude and phase
         magnitude_noisy = np.abs(Zxx_noisy)
         phase_noisy = np.angle(Zxx_noisy)
         
-        # 计算噪声信号的平均能量谱（均值背景）
-        # 我们假设步行的特征在短时间内是稳定的
+        # Calculate the average energy spectrum of the noise signal (mean background)
+        # We assume that the walking feature is stable over short time intervals
         magnitude_noise_mean = np.mean(np.abs(Zxx_noise), axis=1, keepdims=True)
         
-        # 3. 执行谱减 (Power Subtraction)
-        # 计算公式：Result_Mag = Noisy_Mag^2 - alpha * Noise_Mag^2
-        # 我们用能量（幅度的平方）来计算
+        # 3. Power Subtraction
+        # Result_Mag = Noisy_Mag^2 - alpha * Noise_Mag^2
+        # We use energy (square of magnitude) for calculation
+        # The resulting arrays represent the power at each frequency bin
         mag_noisy_sq = magnitude_noisy**2
         mag_noise_sq = magnitude_noise_mean**2
         
-        # 执行减法
+        # Execute subtraction
         mag_result_sq = mag_noisy_sq - alpha * mag_noise_sq
         
-        # 4. 半波整流与谱下限处理
-        # 如果减成了负数，就设为 beta 比例的原始能量，防止产生诡异的“音乐噪声”
+        # 4. Half-wave rectification and flooring
+        # If the result is too small, set it to beta proportion of the original energy, 
+        # to prevent generating weird "music noise"
         mag_result_sq = np.where(mag_result_sq > beta * mag_noisy_sq, 
                                  mag_result_sq, 
                                  beta * mag_noisy_sq)
         
         mag_result = np.sqrt(mag_result_sq)
         
-        # 5. 重构信号 (ISTFT)
-        # 使用处理后的幅度 + 原始的相位
+        # 5. Reconstruct the signal (ISTFT)
+        # Use the processed magnitude + original phase
         Zxx_result = mag_result * np.exp(1j * phase_noisy)
         _, cleaned_signal = signal.istft(Zxx_result, fs=fs, nperseg=nperseg)
         
-        # 保证长度一致
+        # Ensure consistent length with the original signal
         return cleaned_signal[:len(noisy_signal_1d)]
     
     if noisy_signal.ndim == 1:
@@ -205,22 +212,27 @@ class Mask():
     @classmethod
     def multi_impact_gating(cls, data, fs, axis, threshold_factor=0.1, min_dist_s=0.1):
         """
-        支持多峰值检测的信号屏蔽门限函数
+        Noise gating function supporting multi-peak detection.
         
-        参数:
-        - data: 滤波后的力数据 (1D)
-        - fs: 采样率
-        - threshold_factor: 判定为信号开始/结束的阈值系数（相对于局部峰值）
-        - min_dist_ms: 两个推力之间允许的最小间隔（防止把一个带锯齿的峰切成两半）
+        Parameters
+        ----------
+        data: 
+            Filtered force data
+        fs: 
+            Sampling rate
+        threshold_factor: 
+            Threshold coefficient for determining signal start/end (relative to local peaks)
+        min_dist_s: 
+            Minimum interval allowed between two impacts (to prevent cutting a single peak with serrated edges)
         """
         def _multi_impact_gating_1d(data_1d):
-            # 1. 寻找所有显著的峰值（包括负值）
-            # distance: 两次推力之间至少间隔的时间（s）
-            # prominence: 峰值必须比周围高出一定程度，防止误触步行的波浪
+            # 1. Find all significant peaks (including negative peaks)
+            # distance: The minimum number of samples between adjacent peaks
+            # prominence: The peak must be higher than the surrounding baseline by a certain amount
             buffer = round(0.2 * fs)
             data_1d_no_buffer = data_1d[buffer : len(data_1d-buffer)]
             peaks, properties = signal.find_peaks(np.abs(data_1d_no_buffer), 
-                                                  height=np.max(np.abs(data_1d_no_buffer))*0.7, # 只看高于全局最大值一定比例的峰
+                                                  height=np.max(np.abs(data_1d_no_buffer))*0.7, # Only consider peaks that are at least a proportion of the maximum peak
                                                   distance=int(min_dist_s * fs),
                                                   prominence=np.std(data_1d_no_buffer)*2)
             peaks += buffer
@@ -228,13 +240,13 @@ class Mask():
             if len(peaks) == 0:
                 return np.zeros_like(data_1d)
 
-            # 创建一个全局掩码（Mask），初始化为全 False
+            # Create a global mask (Mask), initialized to all False
             total_mask = np.zeros(len(data_1d), dtype=bool)
             
-            # 2. 遍历每一个检测到的峰，寻找各自的边界
+            # 2. Traverse each detected peak and find their respective boundaries
             for p in peaks:
                 p_val = data_1d[p]
-                # 局部基线：取该峰值前/后200ms的均值中较接近峰值者
+                # Local baseline: Take the mean of the values before/after the peak within a 200ms window which is closer to the peak
                 if p_val >= 0:
                     local_base = max(np.mean(data_1d[max(0, round(p-fs*0.2)) : max(0, round(p-fs*0.1))]),
                                     np.mean(data_1d[min(round(p+fs*0.1), len(data_1d)-1) : min(round(p+fs*0.2), len(data_1d)-1)]))
@@ -243,24 +255,24 @@ class Mask():
                                     np.mean(data_1d[min(round(p+fs*0.1), len(data_1d)-1) : min(round(p+fs*0.2), len(data_1d)-1)]))
                 threshold = local_base + (p_val - local_base) * threshold_factor
                 
-                # 向左寻找起点
+                # Find the start point to the left
                 start = p
                 while start > 0 and (data_1d[start] - threshold) * sp.sign(p_val) > 0:
                     start -= 1
                 
-                # 向右寻找终点
+                # Find the end point to the right
                 end = p
                 while end < len(data_1d)-1 and (data_1d[end] - threshold) * sp.sign(p_val) > 0:
                     end += 1
                     
-                # 将这个推力的区间加入掩码
+                # Add the current interval to the global mask
                 total_mask[start:end] = True
                 
-            # 3. 掩码优化：向外扩张半个最小峰间距，确保覆盖完整的起始/结束细节
-            # 同时也把靠得很近的两个小峰“连通”起来
+            # 3. Mask optimization: Expand the mask by half the minimum peak distance to ensure complete coverage of start/end details
+            # Also connect two closely located small peaks
             total_mask = binary_dilation(total_mask, iterations=round(fs*min_dist_s/2))
             
-            # 局部淡入淡出（简单实现：直接使用平滑后的 mask）
+            # Local fade-in and fade-out (simple implementation: directly use the smoothed mask)
             smooth_mask = gaussian_filter1d(total_mask.astype(float), sigma=50)
             
             return data_1d * smooth_mask
@@ -531,30 +543,30 @@ def divide_by_threshold(numerator_arr, denominator_arr, threshold):
 
 def fix_cop_outliers(data, min_bound, max_bound, axis):
     """
-    剔除并插值填充 COP 异常点
+    Remove and interpolate COP outliers.
     """
     def _fix_cop_outliers_1d(data_1d):
         cleaned_cop = data_1d.copy()
         
-        # 1. 识别异常点：超出物理范围或数值突变
-        # 这里以物理边界为例
+        # 1. Recognize outliers (beyond physical boundaries or numerical sudden change)
+        # Use physical boundaries here
         outliers = (data_1d < min_bound) | (data_1d > max_bound)
         
-        # 2. 将异常点设为 NaN (空值)
+        # 2. Set outliers to NaN (missing values)
         cleaned_cop[outliers] = np.nan
         
-        # 3. 寻找非空（正常）点的索引和数值
+        # 3. Find indices and values of non-NaN (valid) points
         idx = np.arange(len(cleaned_cop))
         is_valid = ~np.isnan(cleaned_cop)
         
-        # 4. 如果全都是异常点，直接返回 0
+        # 4. If all points are outliers, return zeros
         if not np.any(is_valid):
             return np.zeros_like(cleaned_cop)
         
-        # 5. 执行插值填充 (使用线性 'linear' 或 立方样条 'cubic')
-        # cubic 更加平滑，但如果连续异常点太多可能会产生过冲
+        # 5. Fill by interpolation
+        # cubic is smoother, but may cause overshoot if there are too many consecutive outliers
         f = interp1d(idx[is_valid], cleaned_cop[is_valid], 
-                    kind='linear', fill_value="extrapolate")
+                     kind='linear', fill_value="extrapolate")
         
         return f(idx)
     

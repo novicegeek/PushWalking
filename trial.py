@@ -7,7 +7,6 @@ import numpy as np
 import os
 import pandas as pd
 import opensim as osim
-import time
 import xml.etree.ElementTree as ET
 from basic import (Filter, extract_push_range, remove_offset, 
                    get_nearest_index, get_vector_norm, integrate_interval, find_response_moment,
@@ -157,6 +156,18 @@ class Trial():
             return data_normalized
         else:
             raise ValueError("Invalid criterium for time normalization. Please choose from 'marker', 'grf', or None.")
+    
+    def _normalize_step_cycle(self, data, criterium: str = 'marker'):
+        """
+        (Unfinished method) Normalize a single data variable to percentage of step cycle.
+        """
+        data_normalized = copy.deepcopy(data)
+        non_dominant_contact_frame = detect_ground_contact(data, criterium)[-1]
+        dominant_contact_frame = detect_ground_contact(data, 'grf')[0]
+        n_frames_step = dominant_contact_frame - non_dominant_contact_frame
+        data_normalized[:, 0] = (data[:, 0] - non_dominant_contact_frame) / n_frames_step * 100
+
+        return data_normalized
 
     def get_velocity(self, data) -> np.ndarray:
         """
@@ -543,18 +554,6 @@ class Trial():
         elif isinstance(data, dict):
             return {field: np.take(field_data, np.arange(idx_start_frame, idx_end_frame + 1), axis=axis)
                     for field, field_data in data.items()}, idx_events
-
-    def _normalize_step_cycle(self, data, criterium: str = 'marker'):
-        """
-        Normalize a single data variable to percentage of step cycle.
-        """
-        data_normalized = copy.deepcopy(data)
-        non_dominant_contact_frame = detect_ground_contact(data, criterium)[-1]
-        dominant_contact_frame = detect_ground_contact(data, 'grf')[0]
-        n_frames_step = dominant_contact_frame - non_dominant_contact_frame
-        data_normalized[:, 0] = (data[:, 0] - non_dominant_contact_frame) / n_frames_step * 100
-
-        return data_normalized
     
     def _update_external_loads_datafile(self, input_xml_path, datafile_path, output_xml_path=''):
         """

@@ -3,10 +3,6 @@ import os
 import numpy as np
 import pandas as pd
 from subject import Subject
-from trial import Trial
-import matplotlib.pyplot as plt
-import time
-import scipy.signal as signal
 
 
 DATA_DIR = r"D:\Overseas\German Sport University Cologne\20.Course Materials\TSM11-Project&Applied Research Methods\22.Measurement Data"

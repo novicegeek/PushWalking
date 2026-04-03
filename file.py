@@ -2,7 +2,6 @@ import math
 import os
 import numpy as np
 import pandas as pd
-from scipy.interpolate import pchip_interpolate
 from basic import (
     divide_by_threshold,
     fix_cop_outliers,

@@ -44,19 +44,19 @@ class Subject():
 
     def __post_init__(self):
         self.subject_data_dir = os.path.join(DATA_DIR, '_'.join([self.subject_id, self.date_of_measurement]))
-        # Initialize IK solver (Don't do this here, to prevent memery contamination)
         self.subject_ik_dir = os.path.join(ANALYSIS_DIR, 'Inverse Kinematics', self.subject_id)
         if not self.model:
             self.subject_ik_setup = os.path.join(self.subject_ik_dir, self.subject_id + '_ik_setup.xml')
         else:
             self.subject_ik_setup = ''
+        # Initialize IK solver (Update: Don't do this here, to prevent memory contamination)
         # self.ik_solver = osim.InverseKinematicsTool(self.subject_ik_setup)
-        # Initialize ID solver (Don't do this here, to prevent memery contamination)
         self.subject_id_dir = os.path.join(ANALYSIS_DIR, 'Inverse Dynamics', self.subject_id)
         if not self.model:
             self.subject_id_setup = os.path.join(self.subject_id_dir, self.subject_id + '_id_setup.xml')
         else:
             self.subject_id_setup = ''
+        # Initialize ID solver (Update: Don't do this here, to prevent memory contamination)
         # self.id_solver = osim.InverseDynamicsTool(self.subject_id_setup)
         self.subject_stats_dir = os.path.join(STATS_DIR, self.subject_id)
         # Read trial list
@@ -87,12 +87,7 @@ class Subject():
                     print(msg)
                     f.write(msg)
                     f.close()
-        subject_extract_df = pd.concat(trial_extract_df_list, ignore_index=True)
-        if not os.path.exists(self.subject_stats_dir):
-            os.makedirs(self.subject_stats_dir)
-        subject_extract_df.to_csv(os.path.join(self.subject_stats_dir, self.subject_id + '_summary.csv'), index=False)
-
-        return subject_extract_df
+        return self.summarize_subject(trial_extract_df_list)
 
     def read_data(self, to_read='all'):
         """
@@ -173,32 +168,12 @@ class Subject():
                 export_to_trc(static_data['markers'], static_metadata, output_path)
         c3dreader.close()
 
-    class Summary():
+    def summarize_subject(self, trial_extract_df_list):
         """
-        Summary of the analysis results of the subject.
+        Summarize the analysis results of the subject and write to file.
         """
-        summary: pd.DataFrame = pd.DataFrame()
-
-        def summarize_to_file(self):
-            """
-            Summarize the analysis results of the subject and write to file.
-            """
-            self.summary.to_csv()
-
-        def add_trial_summary(self, trial: Trial):
-            """
-            Add the summary of a single trial to the subject summary.
-
-            :param trial: The trial instance of Trial class.
-            """
-            self.summary = pd.concat([self.summary, trial.summarize_trial()])
-
-
-@dataclass
-class TrialGenerator(Subject):
-    """
-    Generate Trial instances from measurement data.
-    """
-
-    def generate_trials(self):
-        yield Trial()
+        subject_extract_df = pd.concat(trial_extract_df_list, ignore_index=True)
+        if not os.path.exists(self.subject_stats_dir):
+            os.makedirs(self.subject_stats_dir)
+        subject_extract_df.to_csv(os.path.join(self.subject_stats_dir, self.subject_id + '_summary.csv'), index=False)
+        return subject_extract_df

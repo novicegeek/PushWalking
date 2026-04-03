@@ -1,5 +1,4 @@
 import qtm
-import copy
 import heapq
 import os
 os.chdir(r"D:\Overseas\German Sport University Cologne\20.Course Materials\TSM11-Project&Applied Research Methods")

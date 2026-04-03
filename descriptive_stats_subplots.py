@@ -3,7 +3,7 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-# --- 1. 路径与数据加载 ---
+# --- 1. Load path and data ---
 file_dir = r"D:\Overseas\German Sport University Cologne\20.Course Materials\TSM11-Project&Applied Research Methods\23.Analysis\Stats" # 请替换为你的实际路径
 file_path = os.path.join(file_dir, 'all_subjects_summary_for_stats.csv')
 save_dir = os.path.join(file_dir, "Plots")
@@ -12,14 +12,14 @@ if not os.path.exists(save_dir):
 
 df = pd.read_csv(file_path)
 
-# --- 2. 预处理逻辑 ---
+# --- 2. Create new rows for pooled data ---
 def create_plotting_df(data):
     original = data.copy()
     pooled = data.copy()
     pooled['subject_id'] = 'Pooled'
     return pd.concat([original, pooled], ignore_index=True)
 
-# 统一大小写
+# Capitalize speed and intensity for better aesthetics in plots
 df['speed'] = df['speed'].str.capitalize()
 df['intensity'] = df['intensity'].str.capitalize()
 
@@ -29,16 +29,16 @@ subjects = sorted(df['subject_id'].unique().tolist())
 hue_order = subjects + ['Pooled']
 plot_palette = 'Set1'
 
-# --- 3. 准备子图数据 ---
+# --- 3. Prepare data for subplots ---
 df_sub1 = create_plotting_df(df)
 df_no_fake = df[df['intensity'] != 'Fake'].copy()
 df_sub23 = create_plotting_df(df_no_fake)
 
-# --- 4. 创建复合图 (1行3列) ---
-# 增加宽度 (18)，缩减高度 (7)，确保每个子图看起来很窄
+# --- 4. Create combined plot ---
+# Adjust the width and height to fit the subplots side by side
 fig, axes = plt.subplots(1, 3, figsize=(16, 7))
 
-# 公共绘图参数
+# Common plotting parameters
 box_params = dict(hue='subject_id', hue_order=hue_order, palette=plot_palette, showfliers=True, width=0.8)
 
 # --- Subplot 1: Baseline Speed ---
@@ -62,28 +62,27 @@ axes[2].set_xlabel('Pushing Intensity', fontsize=13, fontweight='bold')
 axes[2].set_ylabel('Normalized Pushing Impulse [N·s/kg]', fontsize=13, fontweight='bold')
 axes[2].get_legend().remove()
 
-# --- 5. 共享图例设置 (水平排列，位于底部) ---
+# --- 5. Common legend settings (horizontal arrangement, at the bottom) ---
 handles, labels = axes[0].get_legend_handles_labels()
 
-# ncol=len(hue_order) 强制图例在一行显示
+# ncol=len(hue_order) force displaying all legend items in one row, frameon=True adds a border around the legend
 fig.legend(
     handles, labels, 
     title='Participant ID', 
     title_fontsize=13,
     loc='lower center', 
-    bbox_to_anchor=(0.5, -0.05), # 放在画布最下方
+    bbox_to_anchor=(0.5, -0.05), # Adjust the vertical position of the legend
     ncol=len(hue_order), 
     frameon=True,
     fontsize=12
 )
 
-# 调整整体间距
-# rect=[0, 0.08, 1, 1] 为底部图例留出 8% 的空间
+# Adjust layout to prevent overlap and ensure the legend has enough space
 plt.tight_layout(rect=[0, 0.05, 1, 1])
 
-# --- 6. 保存图片 ---
+# --- 6. Save figure ---
 save_path = os.path.join(save_dir, 'Horizontal_Combined_Plots.png')
 plt.savefig(save_path, dpi=400, bbox_inches='tight')
 plt.show()
 
-print(f"水平复合图已保存至: {save_path}")
+print(f"Horizontal Combined Plots saved to: {save_path}")
